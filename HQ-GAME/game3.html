@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>遊戲區｜ZooKeeper（三消）</title>
+  <style>
+    :root{ --bg:#0f172a; --panel:#111827; --text:#e5e7eb; --muted:#94a3b8; --accent:#38bdf8; --link:#93c5fd; --border:rgba(255,255,255,.08); --container:1200px; }
+    *{box-sizing:border-box}
+    body{margin:0; line-height:1.6; color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif; background:linear-gradient(120deg,#0b1220,#111827)}
+    .container{max-width:var(--container); margin:0 auto; padding:0 16px}
+    header{position:sticky; top:0; backdrop-filter:saturate(180%) blur(8px); background:rgba(15,23,42,.75); border-bottom:1px solid var(--border); z-index:10}
+    .nav{display:flex; align-items:center; justify-content:space-between; height:56px}
+    .brand{display:flex; align-items:center; gap:10px; font-weight:800; letter-spacing:.5px}
+    .brand .dot{width:10px; height:10px; border-radius:50%; background:var(--accent); box-shadow:0 0 20px var(--accent)}
+    nav ul{list-style:none; display:flex; gap:16px; padding:0; margin:0}
+    nav a{display:inline-block; padding:6px 10px; border-radius:8px; text-decoration:none; color:var(--link); border:1px solid transparent}
+    nav a:hover{border-color:var(--border); color:#fff}
+    nav a.active{background:var(--accent); color:#052436; font-weight:700}
+    .hero{padding:32px 0 12px}
+    .hero h1{margin:0 0 6px; font-size:28px}
+    .hero p{margin:0; color:var(--muted)}
+    main{padding:12px 0 40px}
+    .grid{display:grid; grid-template-columns: 1fr 300px; gap:20px}
+    @media (max-width:980px){ .grid{grid-template-columns:1fr} }
+    .card{background:var(--panel); border:1px solid var(--border); border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    .game-wrap{padding:16px}
+    .game-area{display:grid; grid-template-columns:auto 220px; gap:16px}
+    @media (max-width:800px){ .game-area{grid-template-columns:1fr} }
+    canvas{background:#0b1020; border-radius:12px; box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+    .game-canvas-wrap{position:relative; width:384px; height:384px}
+    .game-canvas-wrap canvas{position:absolute; left:0; top:0}
+    .game-canvas-wrap .fx{pointer-events:none; mix-blend-mode:screen}
+    .side{padding:12px 14px; border-radius:16px}
+    .side h2{font-size:18px; margin:0 0 10px; color:#f8fafc}
+    .stats{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:10px 0 12px}
+    .stat{background:#0b1220; padding:10px; border-radius:10px; text-align:center}
+    .stat b{display:block; font-size:22px; margin-top:2px; color:#fff}
+    .controls{font-size:14px}
+    .btns{display:flex; gap:8px; margin-top:10px}
+    button{flex:1; padding:10px 12px; border:0; border-radius:10px; background:var(--accent); color:#052436; font-weight:700; cursor:pointer}
+    button.secondary{background:#64748b; color:#0b1220}
+    .note{opacity:.7; font-size:12px; margin-top:6px; text-align:center}
+    .howto{padding:16px}
+    .howto h3{margin:0 0 10px}
+    .howto ul{margin:8px 0 0 16px; padding:0}
+    footer{border-top:1px solid var(--border); color:#94a3b8; padding:14px 0 34px; text-align:center}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <div class="brand"><span class="dot"></span>遊戲區</div>
+      <nav>
+        <ul>
+          <li><a href="home.html">首頁</a></li>
+          <li><a href="game.html">俄羅斯方塊</a></li>
+          <li><a href="game2.html">太空戰爭</a></li>
+          <li><a class="active" href="#">ZooKeeper</a></li>
+          <li><a href="contact.html">登出</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="container">
+      <h1>ZooKeeper（三消）</h1>
+      <p>點兩個相鄰格子交換。成功形成 3 個以上相同動物即可消除與連鎖加分。</p>
+    </div>
+  </section>
+
+  <main class="container">
+    <div class="grid">
+      <section class="card game-wrap">
+        <div class="game-area">
+          <div class="game-canvas-wrap">
+            <canvas id="game" width="384" height="384"></canvas>
+            <canvas id="fx"   width="384" height="384" class="fx"></canvas>
+          </div>
+          <aside class="card side">
+            <h2>狀態面板</h2>
+            <div class="stats">
+              <div class="stat">分數<b id="score">0</b></div>
+              <div class="stat">等級<b id="level">1</b></div>
+              <div class="stat">步數<b id="moves">30</b></div>
+              <div class="stat">狀態<b id="state">準備</b></div>
+            </div>
+            <div class="controls">
+              <p><b>操作</b><br>點兩格交換；有效交換會扣 1 步。無可走步數時可使用「洗牌」。</p>
+            </div>
+            <div class="btns">
+              <button id="btnStart">開始</button>
+              <button id="btnPause" class="secondary">暫停</button>
+              <button id="btnShuffle" class="secondary">洗牌</button>
+            </div>
+            <div class="note">Made with HTML5 Canvas + WebAudio</div>
+          </aside>
+        </div>
+      </section>
+
+      <aside class="card howto">
+        <h3>玩法與規則</h3>
+        <ul>
+          <li>交換必須是「相鄰」兩格（上下左右），且交換後需形成至少 1 組 3 連。</li>
+          <li>每次有效交換扣 1 步；步數歸零即結束（盤面處理完為止）。</li>
+          <li>連鎖越多分數倍數越高；每 500 分升級，動物種類最多 8 種。</li>
+          <li>當盤面無解時會自動洗牌，也可手動洗牌。</li>
+        </ul>
+      </aside>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container"><small>by Paddy臭迪小胖子 ©</small></div>
+  </footer>
+
+<script>
+(() => {
+  // ===== 基本設定 =====
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const fx = document.getElementById('fx');
+  const fxctx = fx.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  const TILE = 48, COLS = 8, ROWS = 8;
+  const PADDING = 6; // tile 內邊距，美觀
+  const elScore = document.getElementById('score');
+  const elLevel = document.getElementById('level');
+  const elMoves = document.getElementById('moves');
+  const elState = document.getElementById('state');
+
+  document.getElementById('btnStart').addEventListener('click', startGame);
+  document.getElementById('btnPause').addEventListener('click', togglePause);
+  document.getElementById('btnShuffle').addEventListener('click', () => { if(!busy) shuffleBoard(true); });
+
+  // 動物與顏色（可自行更換/增減）
+  const ANIMALS_ALL = [
+    {emoji:'🐶', color:'#f59e0b'},
+    {emoji:'🐱', color:'#a78bfa'},
+    {emoji:'🐵', color:'#34d399'},
+    {emoji:'🦁', color:'#fb923c'},
+    {emoji:'🐼', color:'#60a5fa'},
+    {emoji:'🐷', color:'#f472b6'},
+    {emoji:'🦊', color:'#fb7185'},
+    {emoji:'🐨', color:'#93c5fd'},
+  ];
+  let typesCount = 6; // 會隨等級增加，最多 8
+
+  // 音效（WebAudio）
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const audio = AC ? new AC() : null;
+  function beep(f=660, d=0.05, type='square', g=0.04){ if(!audio) return; const t=audio.currentTime; const o=audio.createOscillator(), gain=audio.createGain(); o.type=type; o.frequency.setValueAtTime(f,t); o.connect(gain); gain.connect(audio.destination); gain.gain.setValueAtTime(0,t); gain.gain.linearRampToValueAtTime(g,t+0.005); gain.gain.exponentialRampToValueAtTime(0.0001,t+d); o.start(t); o.stop(t+d); }
+  const sfx = {
+    swap  : ()=>beep(520,0.06,'triangle',0.035),
+    deny  : ()=>beep(160,0.08,'sawtooth',0.05),
+    clear : ()=>[523,659,784].forEach((f,i)=>setTimeout(()=>beep(f,0.06,'sine',0.04), i*30)),
+    fall  : ()=>beep(330,0.05,'square',0.03),
+    level : ()=>[392,523,659].forEach((f,i)=>setTimeout(()=>beep(f,0.08,'triangle',0.04), i*60)),
+    end   : ()=>[220,196,174].forEach((f,i)=>setTimeout(()=>beep(f,0.12,'sawtooth',0.05), i*120)),
+  };
+
+  // 狀態
+  let board = []; // [y][x] -> type index
+  let selected = null; // {x,y}
+  let score = 0, moves = 30, level = 1;
+  let running = false, paused = false, busy = false, over = false;
+  let lastTime = 0;
+  const particles = [];
+
+  // ---- 粒子特效（FX Canvas） ----
+  function addBurst(cx, cy, color, n=16){
+    for(let i=0;i<n;i++){
+      const a = Math.random()*Math.PI*2, sp = 1.5 + Math.random()*2.0;
+      particles.push({x:cx, y:cy, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:450, color, alpha:1});
+    }
+  }
+  function drawFX(delta){
+    fxctx.clearRect(0,0,W,H);
+    for(let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.x += p.vx; p.y += p.vy; p.vy += 0.02;
+      p.life -= delta; p.alpha = Math.max(0, p.life/450);
+      fxctx.globalAlpha = p.alpha;
+      fxctx.fillStyle = p.color;
+      fxctx.fillRect(p.x-2,p.y-2,4,4);
+      if(p.life<=0) particles.splice(i,1);
+    }
+    fxctx.globalAlpha = 1;
+  }
+
+  // ---- 工具 ----
+  function randInt(n){ return (Math.random()*n)|0; }
+  function inBounds(x,y){ return x>=0 && y>=0 && x<COLS && y<ROWS; }
+  function updateUI(){ elScore.textContent = score; elLevel.textContent = level; elMoves.textContent = moves; }
+  function setState(txt){ elState.textContent = txt; }
+
+  // ---- 盤面生成（避免初始即成串） ----
+  function initBoard(){
+    board = Array.from({length:ROWS},()=>Array(COLS).fill(0));
+    for(let y=0;y<ROWS;y++){
+      for(let x=0;x<COLS;x++){
+        let t;
+        do{
+          t = randInt(typesCount);
+          board[y][x] = t;
+        }while(createsMatchAt(x,y));
+      }
+    }
+    if(!hasPossibleMove()) shuffleBoard(false); // 確保可解
+  }
+  function createsMatchAt(x,y){
+    const t = board[y][x];
+    // 檢查水平連 3
+    let c=1;
+    for(let i=1;i<=2;i++){ if(board[y]?.[x-i]===t) c++; else break; }
+    for(let i=1;i<=2;i++){ if(board[y]?.[x+i]===t) c++; else break; }
+    if(c>=3) return true;
+    // 檢查垂直連 3
+    c=1;
+    for(let i=1;i<=2;i++){ if(board[y-i]?.[x]===t) c++; else break; }
+    for(let i=1;i<=2;i++){ if(board[y+i]?.[x]===t) c++; else break; }
+    return c>=3;
+  }
+
+  // ---- 配對搜尋（已修正可指定的 Optional Chaining 問題） ----
+  function findMatches(){
+    const marks = Array.from({length:ROWS},()=>Array(COLS).fill(false));
+    let total = 0;
+
+    // 橫向
+    for(let y=0;y<ROWS;y++){
+      let run=1;
+      for(let x=1;x<=COLS;x++){
+        if(x<COLS && board[y][x]===board[y][x-1]) run++;
+        else{
+          if(run>=3){
+            for(let k=0;k<run;k++){ marks[y][x-1-k] = true; total++; }
+          }
+          run=1;
+        }
+      }
+    }
+    // 縱向
+    for(let x=0;x<COLS;x++){
+      let run=1;
+      for(let y=1;y<=ROWS;y++){
+        if(y<ROWS && board[y][x]===board[y-1][x]) run++;
+        else{
+          if(run>=3){
+            for(let k=0;k<run;k++){ marks[y-1-k][x] = true; total++; } // ← 修正這行
+          }
+          run=1;
+        }
+      }
+    }
+    return {marks, total};
+  }
+
+  // ---- 掉落與補齊 ----
+  function collapseAndRefill(){
+    for(let x=0;x<COLS;x++){
+      let write = ROWS-1;
+      for(let y=ROWS-1;y>=0;y--){
+        if(board[y][x]!==null){
+          board[write][x] = board[y][x];
+          write--;
+        }
+      }
+      for(let y=write;y>=0;y--){
+        board[y][x] = randInt(typesCount);
+      }
+    }
+  }
+
+  // ---- 是否還有可走的交換 ----
+  function hasPossibleMove(){
+    function swap(a,b){ const t=board[a.y][a.x]; board[a.y][a.x]=board[b.y][b.x]; board[b.y][b.x]=t; }
+    for(let y=0;y<ROWS;y++){
+      for(let x=0;x<COLS;x++){
+        const A={x,y};
+        const dirs=[[1,0],[0,1]];
+        for(const [dx,dy] of dirs){
+          const B={x:x+dx,y:y+dy};
+          if(!inBounds(B.x,B.y)) continue;
+          swap(A,B);
+          const {total} = findMatches();
+          swap(A,B);
+          if(total>0) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // ---- 洗牌 ----
+  function shuffleBoard(playSfx){
+    if(busy) return;
+    let tries=0;
+    do{
+      tries++;
+      const flat = board.flat();
+      for(let i=flat.length-1;i>0;i--){
+        const j = randInt(i+1);
+        [flat[i],flat[j]]=[flat[j],flat[i]];
+      }
+      for(let y=0,idx=0;y<ROWS;y++) for(let x=0;x<COLS;x++,idx++) board[y][x]=flat[idx];
+      let ok=true;
+      for(let y=0;y<ROWS&&ok;y++) for(let x=0;x<COLS&&ok;x++) ok=!createsMatchAt(x,y);
+      if(ok && hasPossibleMove()) break;
+    }while(tries<200);
+    if(playSfx) sfx.fall();
+    draw();
+  }
+
+  // ---- 交換流程 ----
+  function trySwap(a,b){
+    if(busy || paused || over) return;
+    if(!adjacent(a,b)) { selected = b; draw(); return; }
+    swapCells(a,b);
+    sfx.swap();
+    const after = findMatches();
+    if(after.total>0){
+      busy = true;
+      moves = Math.max(0, moves-1);
+      updateUI();
+      resolveMatches(1); // 從第一鏈開始
+    }else{
+      swapCells(a,b);
+      sfx.deny();
+      draw();
+    }
+  }
+  function adjacent(a,b){ return (Math.abs(a.x-b.x)+Math.abs(a.y-b.y))===1; }
+  function swapCells(a,b){
+    const t = board[a.y][a.x];
+    board[a.y][a.x] = board[b.y][b.x];
+    board[b.y][b.x] = t;
+  }
+
+  // ---- 連鎖處理 ----
+  function resolveMatches(chain){
+    const {marks,total} = findMatches();
+    if(total===0){
+      busy=false;
+      if(moves===0){ over = true; setState('結束'); sfx.end(); }
+      else if(!hasPossibleMove()) { setState('無解 → 洗牌'); shuffleBoard(true); setTimeout(()=>setState('遊戲中'), 400); }
+      return;
+    }
+    // 計分（連鎖倍數）
+    score += total * 10 * chain;
+    updateUI();
+    sfx.clear();
+
+    // 粒子特效 + 清空
+    for(let y=0;y<ROWS;y++){
+      for(let x=0;x<COLS;x++){
+        if(marks[y][x]){
+          const {color} = ANIMALS_ALL[board[y][x]];
+          const cx = x*TILE + TILE/2, cy = y*TILE + TILE/2;
+          addBurst(cx, cy, color, 14);
+          board[y][x] = null;
+        }
+      }
+    }
+    draw();
+
+    // 掉落 + 補齊
+    setTimeout(()=>{
+      collapseAndRefill();
+      sfx.fall();
+      draw();
+      // 升級：每 500 分
+      const newLevel = Math.floor(score/500)+1;
+      if(newLevel>level){
+        level = newLevel;
+        typesCount = Math.min(8, 5 + level);
+        sfx.level();
+        updateUI();
+      }
+      setTimeout(()=>resolveMatches(chain+1), 160);
+    }, 160);
+  }
+
+  // ---- 繪圖 ----
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle = '#0b1020';
+    ctx.fillRect(0,0,W,H);
+
+    ctx.strokeStyle = 'rgba(255,255,255,.06)';
+    ctx.lineWidth = 1;
+    for(let i=0;i<=COLS;i++){ ctx.beginPath(); ctx.moveTo(i*TILE,0); ctx.lineTo(i*TILE,H); ctx.stroke(); }
+    for(let i=0;i<=ROWS;i++){ ctx.beginPath(); ctx.moveTo(0,i*TILE); ctx.lineTo(W,i*TILE); ctx.stroke(); }
+
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '28px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui';
+    for(let y=0;y<ROWS;y++){
+      for(let x=0;x<COLS;x++){
+        const t = board[y][x];
+        if(t==null) continue;
+        const {emoji, color} = ANIMALS_ALL[t];
+        const px = x*TILE, py = y*TILE;
+        ctx.fillStyle = color;
+        roundRect(ctx, px + PADDING, py + PADDING, TILE - PADDING*2, TILE - PADDING*2, 10);
+        ctx.fill();
+        ctx.globalAlpha = .12; ctx.fillStyle='#fff';
+        roundRect(ctx, px+PADDING+3, py+PADDING+3, TILE-PADDING*2-6, (TILE-PADDING*2)*0.32, 8);
+        ctx.fill(); ctx.globalAlpha=1;
+        ctx.fillText(emoji, px + TILE/2, py + TILE/2 + 2);
+      }
+    }
+
+    if(selected){
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#38bdf8';
+      const px = selected.x*TILE + 2, py = selected.y*TILE + 2;
+      roundRect(ctx, px, py, TILE-4, TILE-4, 10);
+      ctx.stroke();
+    }
+  }
+  function roundRect(c, x, y, w, h, r){
+    c.beginPath();
+    c.moveTo(x+r, y);
+    c.arcTo(x+w, y, x+w, y+h, r);
+    c.arcTo(x+w, y+h, x, y+h, r);
+    c.arcTo(x, y+h, x, y, r);
+    c.arcTo(x, y, x+w, y, r);
+    c.closePath();
+  }
+
+  // ---- 輸入 ----
+  canvas.addEventListener('mousedown', onPoint);
+  canvas.addEventListener('touchstart', (e)=>{ onPoint(e.touches[0]); e.preventDefault(); }, {passive:false});
+
+  function getCellFromEvent(e){
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = Math.floor((e.clientX - rect.left) * scaleX / TILE);
+    const y = Math.floor((e.clientY - rect.top ) * scaleY / TILE);
+    return {x,y};
+  }
+
+  function onPoint(e){
+    if(!running || paused || busy || over) return;
+    const cell = getCellFromEvent(e);
+    if(!inBounds(cell.x,cell.y)) return;
+
+    if(!selected){
+      selected = cell;
+      draw();
+      return;
+    }
+    if(selected.x===cell.x && selected.y===cell.y){
+      selected = null; draw(); return;
+    }
+    const prev = selected;
+    selected = null;
+    draw();
+    trySwap(prev, cell);
+  }
+
+  // ---- 迴圈（僅 FX 動畫需求） ----
+  function loop(ts){
+    const delta = ts - lastTime; lastTime = ts;
+    if(running && !paused){ drawFX(delta); }
+    requestAnimationFrame(loop);
+  }
+
+  // ---- 流程 ----
+  function reset(){
+    score=0; moves=30; level=1; typesCount=6;
+    over=false; paused=false; busy=false; running=false;
+    selected=null; particles.length=0;
+    initBoard(); draw(); updateUI(); setState('準備');
+  }
+  function startGame(){
+    if(over) reset();
+    running = true; paused=false; setState('遊戲中');
+    if(audio && audio.state==='suspended'){ audio.resume?.(); }
+  }
+  function togglePause(){
+    if(!running || over) return;
+    paused = !paused; setState(paused?'暫停':'遊戲中');
+  }
+
+  // 啟動
+  reset();
+  requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
